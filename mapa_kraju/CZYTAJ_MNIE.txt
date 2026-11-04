@@ -1,0 +1,24 @@
+SZCZEGOLOWA MAPA KRAJU (S3V53+) - ulice z nazwami, dzielnice, wsie, powiaty, gminy, lasy, wody
+================================================================================================
+Aparat: USTAWIENIA > REGION > KRAJ MAPY (OK zmienia kraj). Plik \MAPA\KRAJ_<KOD>.VM pobiera sie sam przy Wi-Fi,
+jesli jest w aktualnym wydaniu na GitHubie. Rysowany na mapie swiata od przyblizenia 9 (do 17).
+
+JAK ZROBIC MAPE KRAJU (raz na kraj, potem np. raz na pol roku - nowsze dane)
+-----------------------------------------------------------------------------
+Dane OpenStreetMap dla calej Polski to ok. 2 GB, przerobienie trwa 1-3 godziny - robi to za Ciebie GitHub
+(za darmo, w chmurze):
+1. W repozytorium 4cam-aktualizacje: Add file > Upload files - wrzuc folder mapa_kraju (osm_extract.cpp,
+   gen_kraj.py, gen_vmap.py) i plik mapa_kraju.yml do .github/workflows/ (na GitHubie: Add file > Create new file,
+   nazwa ".github/workflows/mapa_kraju.yml", wklej zawartosc).
+2. Zakladka Actions > "Mapa kraju" > Run workflow: kod PL, geofabrik europe/poland, wersja 1.
+3. Po 1-3 h w Releases pojawi sie pre-release "kraj-PL-1" z KRAJ_PL.VM i KRAJ_PL.json. Pobierz KRAJ_PL.json.
+4. Przy najblizszym wydaniu programu dopisz:  --kraj-info KRAJ_PL.json
+   (np. py zrob_wydanie.py --tag v53 --bin S3V53.ino.bin --nazwa S3V53 --build 53 --kraj-info KRAJ_PL.json)
+   Manifest zostanie podpisany z mapa kraju - aparaty z krajem PL pobiora ja same.
+Kody geofabrik: europe/poland, europe/germany, europe/czech-republic, europe/slovakia, europe/lithuania,
+europe/ukraine, europe/austria, europe/croatia, europe/italy, europe/france, europe/spain, europe/netherlands,
+europe/great-britain, europe/andorra. Duze kraje (Niemcy, Francja) moga przekroczyc 6 h GitHuba - wtedy
+podziel na regiony albo zrob na wlasnym komputerze z Linuxem (polecenia w naglowkach osm_extract.cpp i gen_kraj.py).
+
+Rozmiar: Polska ok. 0,5-1 GB na karcie. Licencja danych: (c) wspoltworcy OpenStreetMap, ODbL - przy sprzedazy
+podaj w instrukcji "Mapy: (c) OpenStreetMap contributors, Natural Earth, GeoNames".

@@ -1,0 +1,94 @@
+# GitHub Actions: mapy dla aparatu 4-CAMERA GIF. Actions > "Mapy" > Run workflow.
+# Robi w chmurze: mape swiata SWIAT.VM (Natural Earth + GeoNames) i szczegolowa mape kraju KRAJ_<KOD>.VM
+# (OpenStreetMap) i wrzuca je do wydania (pre-release) "mapy-<wersja>". Sumy SHA-256 i rozmiary sa w opisie wydania -
+# podpisany manifest (zrob_wydanie.py) wskazuje na te pliki, aparaty pobieraja je same.
+name: Mapy
+on:
+  workflow_dispatch:
+    inputs:
+      kod:
+        description: "Kod kraju (np. PL)"
+        required: true
+        default: "PL"
+      geofabrik:
+        description: "Kraj na download.geofabrik.de (np. europe/poland)"
+        required: true
+        default: "europe/poland"
+      wersja:
+        description: "Numer wydania map"
+        required: true
+        default: "1"
+      swiat:
+        description: "Zrobic tez mape swiata?"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  wydanie:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "mapy-${{ inputs.wersja }}" -R "${{ github.repository }}" --prerelease --title "Mapy v${{ inputs.wersja }}" --notes "Mapy dla aparatu. (c) OpenStreetMap contributors (ODbL), Natural Earth, GeoNames." || true
+  swiat:
+    if: ${{ inputs.swiat }}
+    needs: wydanie
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install numpy
+      - name: Natural Earth + miejscowosci
+        run: |
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/nvkelso/natural-earth-vector.git ne
+          cd ne && git sparse-checkout set --no-cone $(for f in land lakes glaciated_areas urban_areas admin_0_boundary_lines_land admin_1_states_provinces_lines admin_1_states_provinces admin_0_countries rivers_lake_centerlines roads railroads populated_places; do echo geojson/ne_10m_$f.geojson; done) && cd ..
+          git clone -q --depth 1 https://github.com/lutangar/cities.json.git cities
+      - name: SWIAT.VM
+        run: python3 mapa_kraju/gen_vmap.py ne/geojson cities/cities.json SWIAT.VM
+      - name: Do wydania
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          T="mapy-${{ inputs.wersja }}"
+          printf '{"name":"SWIAT.VM","url":"https://github.com/%s/releases/download/%s/SWIAT.VM","size":%s,"sha256":"%s"}\n' "${{ github.repository }}" "$T" "$(stat -c %s SWIAT.VM)" "$(sha256sum SWIAT.VM | cut -d' ' -f1)" > SWIAT.json
+          cat SWIAT.json
+          gh release upload "$T" SWIAT.VM SWIAT.json --clobber
+  kraj:
+    needs: wydanie
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Narzedzia
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libosmium2-dev libprotozero-dev libexpat1-dev zlib1g-dev libbz2-dev liblz4-dev
+          pip install numpy
+      - run: g++ -O2 -std=c++17 mapa_kraju/osm_extract.cpp -o osm_extract -lz -lexpat -lbz2 -pthread
+      - name: Dane OpenStreetMap
+        run: curl -sSL -o kraj.osm.pbf "https://download.geofabrik.de/${{ inputs.geofabrik }}-latest.osm.pbf" && ls -l kraj.osm.pbf
+      - name: Wyciaganie
+        run: ./osm_extract kraj.osm.pbf | gzip -1 > kraj.txt.gz && rm kraj.osm.pbf && ls -l kraj.txt.gz
+      - name: Kafelki
+        run: python3 mapa_kraju/gen_kraj.py kraj.txt.gz "KRAJ_${{ inputs.kod }}.VM"
+      - name: Do wydania
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          T="mapy-${{ inputs.wersja }}"; F="KRAJ_${{ inputs.kod }}.VM"
+          printf '{"name":"%s","code":"%s","url":"https://github.com/%s/releases/download/%s/%s","size":%s,"sha256":"%s"}\n' "$F" "${{ inputs.kod }}" "${{ github.repository }}" "$T" "$F" "$(stat -c %s $F)" "$(sha256sum $F | cut -d' ' -f1)" > "KRAJ_${{ inputs.kod }}.json"
+          cat "KRAJ_${{ inputs.kod }}.json"
+          gh release upload "$T" "$F" "KRAJ_${{ inputs.kod }}.json" --clobber
+  opis:
+    needs: [swiat, kraj]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          T="mapy-${{ inputs.wersja }}"; cd "$(mktemp -d)"
+          gh release download "$T" -R "${{ github.repository }}" -p "*.json" || true
+          { echo "Mapy dla aparatu. (c) OpenStreetMap contributors (ODbL), Natural Earth, GeoNames."; echo; echo "INFO:"; cat *.json 2>/dev/null; } > notes.txt
+          gh release edit "$T" -R "${{ github.repository }}" --notes-file notes.txt
